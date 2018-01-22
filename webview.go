@@ -254,7 +254,8 @@ var (
 	m     sync.Mutex
 	index uintptr
 	fns   = map[uintptr]func(){}
-	cbs   = map[WebView]ExternalInvokeCallbackFunc{}
+	e_cbs   = map[WebView]ExternalInvokeCallbackFunc{}
+	r_cbs   = map[WebView]RewriteRequestCallbackFunc{}
 )
 
 type webview struct {
@@ -289,9 +290,14 @@ func New(settings Settings) WebView {
 		C.int(boolToInt(settings.Resizable)), C.int(boolToInt(settings.Debug)))
 	m.Lock()
 	if settings.ExternalInvokeCallback != nil {
-		cbs[w] = settings.ExternalInvokeCallback
+		e_cbs[w] = settings.ExternalInvokeCallback
 	} else {
-		cbs[w] = func(w WebView, data string) {}
+		e_cbs[w] = func(w WebView, data string) {}
+	}
+	if settings.RewriteRequestCallback != nil {
+		r_cbs[w] = settings.RewriteRequestCallback
+	} else {
+		r_cbs[w] = func(w WebView, url string) string { return url }
 	}
 	m.Unlock()
 	return w
@@ -379,7 +385,7 @@ func _webviewExternalInvokeCallback(w unsafe.Pointer, data unsafe.Pointer) {
 		cb ExternalInvokeCallbackFunc
 		wv WebView
 	)
-	for wv, cb = range cbs {
+	for wv, cb = range e_cbs {
 		if wv.(*webview).w == w {
 			break
 		}
@@ -392,9 +398,21 @@ func _webviewExternalInvokeCallback(w unsafe.Pointer, data unsafe.Pointer) {
 func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url unsafe.Pointer) *C.char {
 	u := C.GoString((*C.char)(url))
 
-	//TODO invoke RewriteRequestCallbackFunc and return its value
+	m.Lock()
+	var (
+		cb RewriteRequestCallbackFunc
+		wv WebView
+	)
+	for wv, cb = range r_cbs {
+		if wv.(*webview).w == w {
+			break
+		}
+	}
+	m.Unlock()
 
-	return C.CString(u)
+	n := cb(wv, u)
+	return C.CString(n)
+
 	//return value must be freed by caller C code
 }
 
@@ -553,8 +571,8 @@ func (w *webview) Bind(name string, v interface{}) (sync func(), err error) {
 	}
 
 	m.Lock()
-	cb := cbs[w]
-	cbs[w] = func(w WebView, data string) {
+	cb := e_cbs[w]
+	e_cbs[w] = func(w WebView, data string) {
 		if ok := b.Call(data); ok {
 			sync()
 		} else {
