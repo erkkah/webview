@@ -388,6 +388,16 @@ func _webviewExternalInvokeCallback(w unsafe.Pointer, data unsafe.Pointer) {
 	cb(wv, C.GoString((*C.char)(data)))
 }
 
+//export _webviewRewriteRequestCallbackFunc
+func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url unsafe.Pointer) *C.char {
+	u := C.GoString((*C.char)(url))
+
+	//TODO invoke RewriteRequestCallbackFunc and return its value
+
+	return C.CString(u)
+	//return value must be freed by caller C code
+}
+
 var bindTmpl = template.Must(template.New("").Parse(`
 if (typeof {{.Name}} === 'undefined') {
 	{{.Name}} = {};

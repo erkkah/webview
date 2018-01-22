@@ -90,6 +90,8 @@ struct webview;
 
 typedef void (*webview_external_invoke_cb_t)(struct webview *w,
                                              const char *arg);
+typedef char* (*webview_rewrite_request_cb_t)(struct webview *w,
+                                             const char *url);
 
 struct webview {
   const char *url;
@@ -99,6 +101,7 @@ struct webview {
   int resizable;
   int debug;
   webview_external_invoke_cb_t external_invoke_cb;
+  webview_rewrite_request_cb_t rewrite_request_cb;
   struct webview_priv priv;
   void *userdata;
 };
@@ -1587,6 +1590,26 @@ static void webview_did_clear_window_object(id self, SEL cmd, id webview,
   [script setValue:self forKey:@"external"];
 }
 
+static id webview_will_send_request(id self,
+                                    SEL cmd,
+                                    id sender,
+                                    id identifier,
+                                    id request,
+                                    id redirectResponse,
+                                    id dataSource) {
+    struct webview *w =
+        (struct webview *)objc_getAssociatedObject(self, "webview");
+    if (w == NULL || w->rewrite_request_cb == NULL) {
+      return request;
+    }
+
+    char* newURL = w->rewrite_request_cb(w, [[((NSURLRequest *)(request)).URL absoluteString] UTF8String]);
+    free(newURL);
+
+    //TODO: mutate or make new request based on newURL instead of returning 'request'
+    return request;
+}
+
 static void webview_external_invoke(id self, SEL cmd, id arg) {
   struct webview *w =
       (struct webview *)objc_getAssociatedObject(self, "webview");
@@ -1618,6 +1641,9 @@ WEBVIEW_API int webview_init(struct webview *w) {
                   (IMP)webview_did_clear_window_object, "v@:@@@");
   class_addMethod(webViewDelegateClass, sel_registerName("invoke:"),
                   (IMP)webview_external_invoke, "v@:@");
+  class_addMethod(webViewDelegateClass,
+                  sel_registerName("webView:resource:willSendRequest:redirectResponse:fromDataSource:"),
+                   (IMP)webview_will_send_request, "@@:@@@@@");
   objc_registerClassPair(webViewDelegateClass);
 
   w->priv.windowDelegate = [[webViewDelegateClass alloc] init];
@@ -1653,6 +1679,7 @@ WEBVIEW_API int webview_init(struct webview *w) {
   [w->priv.webview
       setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
   w->priv.webview.frameLoadDelegate = w->priv.windowDelegate;
+  w->priv.webview.resourceLoadDelegate = w->priv.windowDelegate;
   [[w->priv.window contentView] addSubview:w->priv.webview];
   [w->priv.window orderFrontRegardless];
 
