@@ -1633,10 +1633,10 @@ static id webview_will_send_request(id self,
     }
 
     char* newURL = w->rewrite_request_cb(w, [[((NSURLRequest *)(request)).URL absoluteString] UTF8String]);
-    free(newURL);
 
     NSMutableURLRequest* newRequest = [(NSURLRequest *)(request) mutableCopy];
     newRequest.URL = [NSURL URLWithString: [NSString stringWithUTF8String:newURL]];
+  free(newURL);
 
     return newRequest;
 }
