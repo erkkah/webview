@@ -158,6 +158,8 @@ func Debugf(format string, a ...interface{}) {
 // string can be used.
 type ExternalInvokeCallbackFunc func(w WebView, data string)
 
+type RewriteRequestCallbackFunc func(w WebView, url string) string
+
 // Settings is a set of parameters to customize the initial WebView appearance
 // and behavior. It is passed into the webview.New() constructor.
 type Settings struct {
@@ -175,6 +177,8 @@ type Settings struct {
 	Debug bool
 	// A callback that is executed when JavaScript calls "window.external.invoke()"
 	ExternalInvokeCallback ExternalInvokeCallbackFunc
+	// A callback that is called to rewrite webview initiated url requests
+	RewriteRequestCallback RewriteRequestCallbackFunc
 }
 
 // WebView is an interface that wraps the basic methods for controlling the UI
