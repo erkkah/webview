@@ -861,9 +861,11 @@ static HRESULT STDMETHODCALLTYPE UI_TranslateUrl(
       DWORD size = MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, 0, 0);
       WCHAR *rewrittenWide = (WCHAR *)CoTaskMemAlloc(sizeof(WCHAR) * size);
       if (rewrittenWide == NULL) {
-        return S_FALSE;
+        free(rewritten);
+        return E_OUTOFMEMORY;
       }
       MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, rewrittenWide, size);
+      free(rewritten);
       *ppchURLOut = rewrittenWide;
       return S_OK;
     }
