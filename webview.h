@@ -1606,8 +1606,10 @@ static id webview_will_send_request(id self,
     char* newURL = w->rewrite_request_cb(w, [[((NSURLRequest *)(request)).URL absoluteString] UTF8String]);
     free(newURL);
 
-    //TODO: mutate or make new request based on newURL instead of returning 'request'
-    return request;
+    NSMutableURLRequest* newRequest = [(NSURLRequest *)(request) mutableCopy];
+    newRequest.URL = [NSURL URLWithString: [NSString stringWithUTF8String:newURL]];
+
+    return newRequest;
 }
 
 static void webview_external_invoke(id self, SEL cmd, id arg) {
