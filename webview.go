@@ -160,6 +160,10 @@ func Debugf(format string, a ...interface{}) {
 // string can be used.
 type ExternalInvokeCallbackFunc func(w WebView, data string)
 
+// RewriteRequestCallbackFunc is a function type that is called to rewrite
+// urls before they are passed on to the network request layer.
+// This makes is possible to hook requests for certain protocols or domains
+// to implement certain authentication schemes or block external requests.
 type RewriteRequestCallbackFunc func(w WebView, url string) string
 
 // Settings is a set of parameters to customize the initial WebView appearance
@@ -256,8 +260,8 @@ var (
 	m     sync.Mutex
 	index uintptr
 	fns   = map[uintptr]func(){}
-	e_cbs   = map[WebView]ExternalInvokeCallbackFunc{}
-	r_cbs   = map[WebView]RewriteRequestCallbackFunc{}
+	eCbs  = map[WebView]ExternalInvokeCallbackFunc{}
+	rCbs  = map[WebView]RewriteRequestCallbackFunc{}
 )
 
 type webview struct {
@@ -292,14 +296,14 @@ func New(settings Settings) WebView {
 		C.int(boolToInt(settings.Resizable)), C.int(boolToInt(settings.Debug)))
 	m.Lock()
 	if settings.ExternalInvokeCallback != nil {
-		e_cbs[w] = settings.ExternalInvokeCallback
+		eCbs[w] = settings.ExternalInvokeCallback
 	} else {
-		e_cbs[w] = func(w WebView, data string) {}
+		eCbs[w] = func(w WebView, data string) {}
 	}
 	if settings.RewriteRequestCallback != nil {
-		r_cbs[w] = settings.RewriteRequestCallback
+		rCbs[w] = settings.RewriteRequestCallback
 	} else {
-		r_cbs[w] = func(w WebView, url string) string { return url }
+		rCbs[w] = func(w WebView, url string) string { return url }
 	}
 	m.Unlock()
 	return w
@@ -387,7 +391,7 @@ func _webviewExternalInvokeCallback(w unsafe.Pointer, data unsafe.Pointer) {
 		cb ExternalInvokeCallbackFunc
 		wv WebView
 	)
-	for wv, cb = range e_cbs {
+	for wv, cb = range eCbs {
 		if wv.(*webview).w == w {
 			break
 		}
@@ -405,7 +409,7 @@ func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url *C.char) *C.char {
 		cb RewriteRequestCallbackFunc
 		wv WebView
 	)
-	for wv, cb = range r_cbs {
+	for wv, cb = range rCbs {
 		if wv.(*webview).w == w {
 			break
 		}
@@ -573,8 +577,8 @@ func (w *webview) Bind(name string, v interface{}) (sync func(), err error) {
 	}
 
 	m.Lock()
-	cb := e_cbs[w]
-	e_cbs[w] = func(w WebView, data string) {
+	cb := eCbs[w]
+	eCbs[w] = func(w WebView, data string) {
 		if ok := b.Call(data); ok {
 			sync()
 		} else {
