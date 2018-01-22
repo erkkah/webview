@@ -841,8 +841,37 @@ static HRESULT STDMETHODCALLTYPE UI_GetExternal(
 static HRESULT STDMETHODCALLTYPE UI_TranslateUrl(
     IDocHostUIHandler FAR *This, DWORD dwTranslate, OLECHAR __RPC_FAR *pchURLIn,
     OLECHAR __RPC_FAR *__RPC_FAR *ppchURLOut) {
-  *ppchURLOut = 0;
-  return S_FALSE;
+
+  size_t offset = (size_t) & ((_IOleClientSiteEx *)NULL)->ui;
+  _IOleClientSiteEx *ex = (_IOleClientSiteEx *)((char *)(This)-offset);
+  struct webview *w = (struct webview *)GetWindowLongPtr(
+      ex->inplace.frame.window, GWLP_USERDATA);
+
+  if (w->rewrite_request_cb == NULL) {
+    *ppchURLOut = 0;
+    return S_FALSE;
+  }
+  else {
+    char* utf8URL = webview_from_utf16(pchURLIn);
+    char* rewritten = w->rewrite_request_cb(w, utf8URL);
+    GlobalFree(utf8URL);
+    utf8URL = NULL;
+
+    if (rewritten) {
+      DWORD size = MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, 0, 0);
+      WCHAR *rewrittenWide = (WCHAR *)CoTaskMemAlloc(sizeof(WCHAR) * size);
+      if (rewrittenWide == NULL) {
+        return S_FALSE;
+      }
+      MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, rewrittenWide, size);
+      *ppchURLOut = rewrittenWide;
+      return S_OK;
+    }
+    else {
+      *ppchURLOut = 0;
+      return S_FALSE;
+    }
+  }
 }
 static HRESULT STDMETHODCALLTYPE
 UI_FilterDataObject(IDocHostUIHandler FAR *This, IDataObject __RPC_FAR *pDO,

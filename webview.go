@@ -25,6 +25,7 @@ package webview
 #include "webview.h"
 
 extern void _webviewExternalInvokeCallback(void *, void *);
+extern char* _webviewRewriteRequestCallbackFunc(void*, char*);
 
 static inline void CgoWebViewFree(void *w) {
 	free((void *)((struct webview *)w)->title);
@@ -41,6 +42,7 @@ static inline void *CgoWebViewCreate(int width, int height, char *title, char *u
 	w->resizable = resizable;
 	w->debug = debug;
 	w->external_invoke_cb = (webview_external_invoke_cb_t) _webviewExternalInvokeCallback;
+	w->rewrite_request_cb = (webview_rewrite_request_cb_t) _webviewRewriteRequestCallbackFunc;
 	if (webview_init(w) != 0) {
 		CgoWebViewFree(w);
 		return NULL;
@@ -395,7 +397,7 @@ func _webviewExternalInvokeCallback(w unsafe.Pointer, data unsafe.Pointer) {
 }
 
 //export _webviewRewriteRequestCallbackFunc
-func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url unsafe.Pointer) *C.char {
+func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url *C.char) *C.char {
 	u := C.GoString((*C.char)(url))
 
 	m.Lock()
