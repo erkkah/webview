@@ -1626,19 +1626,19 @@ static id webview_will_send_request(id self,
                                     id request,
                                     id redirectResponse,
                                     id dataSource) {
-    struct webview *w =
-        (struct webview *)objc_getAssociatedObject(self, "webview");
-    if (w == NULL || w->rewrite_request_cb == NULL) {
-      return request;
-    }
+  struct webview *w =
+  (struct webview *)objc_getAssociatedObject(self, "webview");
 
-    char* newURL = w->rewrite_request_cb(w, [[((NSURLRequest *)(request)).URL absoluteString] UTF8String]);
+  if (w == NULL || w->rewrite_request_cb == NULL) {
+    return request;
+  }
 
-    NSMutableURLRequest* newRequest = [(NSURLRequest *)(request) mutableCopy];
-    newRequest.URL = [NSURL URLWithString: [NSString stringWithUTF8String:newURL]];
+  char* newURL = w->rewrite_request_cb(w, [[((NSURLRequest *)(request)).URL absoluteString] UTF8String]);
+  NSMutableURLRequest* newRequest = [(NSURLRequest *)(request) mutableCopy];
+  newRequest.URL = [NSURL URLWithString: [NSString stringWithUTF8String:newURL]];
   free(newURL);
 
-    return newRequest;
+  return newRequest;
 }
 
 static void webview_external_invoke(id self, SEL cmd, id arg) {
