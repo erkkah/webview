@@ -1673,13 +1673,6 @@ static void webview_decide_policy_for_navigation_action(id self,
     NSString *redirectUrlString = [NSString stringWithUTF8String:redirectUrl];
     free(redirectUrl);
 
-    //If a callback is registered with webviewInvokeRewriteScheme for a certain
-    //scheme, it must change the URL or else there will be an infinite redirection loop
-    if ([inUrlString compare:redirectUrlString] == NSOrderedSame) {
-        redirectUrlString = @"about:blank";
-        webview_debug("webviewInvokeRewriteScheme error: URL unchanged after rewrite %s", inUrl);
-    }
-
     [decisionListener ignore];
 
     dispatch_async(dispatch_get_main_queue(), ^{

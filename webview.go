@@ -481,6 +481,13 @@ func _webviewInvokeRewriteScheme(w unsafe.Pointer, url *C.char) *C.char {
 		n = cb(wv, u)
 	}
 
+	//If a callback is registered with webviewInvokeRewriteScheme for a certain
+	//scheme, it must change the URL or else there will be an infinite redirection loop
+	if (n == u) {
+		n = "about:blank";
+		log.Printf("webviewInvokeRewriteScheme error: URL unchanged after rewrite %v", u);
+	}
+
 	return C.CString(n)
 	//return value must be freed by caller C code
 }
