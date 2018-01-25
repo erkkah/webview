@@ -456,8 +456,13 @@ func rewriteSchemeCallbacksForWebviewAndURL(w unsafe.Pointer, u string) (WebView
 			break
 		}
 	}
-	uo, _ := url.Parse(u)
+	uo, error := url.Parse(u)
+	if error != nil {
+		log.Printf("Failed parsing URL for scheme callback lookup: %v", u)
+	}
+
 	cb = cbm[uo.Scheme]
+
 	m.Unlock()
 
 	return wv, cb
@@ -470,7 +475,9 @@ func _webviewInvokeRewriteScheme(w unsafe.Pointer, url *C.char) *C.char {
 
 	wv, cb := rewriteSchemeCallbacksForWebviewAndURL(w, u)
 
-	if cb != nil {
+	if cb == nil {
+		log.Printf("webviewInvokeRewriteScheme called for scheme without callback: %v", u)
+	} else {
 		n = cb(wv, u)
 	}
 
