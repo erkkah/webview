@@ -26,6 +26,8 @@ package webview
 
 extern void _webviewExternalInvokeCallback(void *, void *);
 extern char* _webviewRewriteRequestCallbackFunc(void*, char*);
+extern char* webviewInvokeRewriteScheme(void*, char*);
+extern bool webviewSchemeIsHandled(void*, char*);
 
 static inline void CgoWebViewFree(void *w) {
 	free((void *)((struct webview *)w)->title);
@@ -105,6 +107,7 @@ import (
 	"sync"
 	"unicode"
 	"unsafe"
+	"net/url"
 )
 
 func init() {
@@ -164,7 +167,18 @@ type ExternalInvokeCallbackFunc func(w WebView, data string)
 // urls before they are passed on to the network request layer.
 // This makes is possible to hook requests for certain protocols or domains
 // to implement certain authentication schemes or block external requests.
+// Due to implementation details, custom URL schemes registered in
+// Settings.RewriteSchemeCallbacks will not be passed to to this callback,
+// only to RewriteSchemeCallbackFunc, and vise versa.
 type RewriteRequestCallbackFunc func(w WebView, url string) string
+
+// RewriteSchemeCallbackFunc is a function type that is called to rewrite
+// custom scheme URLs. The WebView client can register rewrite
+// callbacks for one or more schemes of their choice in Settings.RewriteSchemeCallbacks
+// IMPORTANT: due to implementation details, the cross-platform rewrite behavior
+// is only defined for outermost frame (window) content, ie. the
+// behavior will be undefined for embedded web resources using custom schemes
+type RewriteSchemeCallbackFunc func(w WebView, url string) string
 
 // Settings is a set of parameters to customize the initial WebView appearance
 // and behavior. It is passed into the webview.New() constructor.
@@ -185,6 +199,8 @@ type Settings struct {
 	ExternalInvokeCallback ExternalInvokeCallbackFunc
 	// A callback that is called to rewrite webview initiated url requests
 	RewriteRequestCallback RewriteRequestCallbackFunc
+	// Map from URL scheme to a callback that will rewrite the URL
+	RewriteSchemeCallbacks map[string]RewriteSchemeCallbackFunc
 }
 
 // WebView is an interface that wraps the basic methods for controlling the UI
@@ -262,6 +278,7 @@ var (
 	fns   = map[uintptr]func(){}
 	eCbs  = map[WebView]ExternalInvokeCallbackFunc{}
 	rCbs  = map[WebView]RewriteRequestCallbackFunc{}
+	sCbm  = map[WebView]map[string]RewriteSchemeCallbackFunc{}
 )
 
 type webview struct {
@@ -304,6 +321,11 @@ func New(settings Settings) WebView {
 		rCbs[w] = settings.RewriteRequestCallback
 	} else {
 		rCbs[w] = func(w WebView, url string) string { return url }
+	}
+	if settings.RewriteSchemeCallbacks != nil {
+		sCbm[w] = settings.RewriteSchemeCallbacks
+	} else {
+		sCbm[w] = map[string]RewriteSchemeCallbackFunc {}
 	}
 	m.Unlock()
 	return w
@@ -417,9 +439,51 @@ func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url *C.char) *C.char {
 	m.Unlock()
 
 	n := cb(wv, u)
-	return C.CString(n)
 
+	return C.CString(n)
 	//return value must be freed by caller C code
+}
+
+func rewriteSchemeCallbacksForWebviewAndURL(w unsafe.Pointer, u string) (WebView, RewriteSchemeCallbackFunc) {
+	m.Lock()
+	var (
+		cb RewriteSchemeCallbackFunc
+		cbm map[string]RewriteSchemeCallbackFunc
+		wv WebView
+	)
+	for wv, cbm = range sCbm {
+		if wv.(*webview).w == w {
+			break
+		}
+	}
+	uo, _ := url.Parse(u)
+	cb = cbm[uo.Scheme]
+	m.Unlock()
+
+	return wv, cb
+}
+
+//export webviewInvokeRewriteScheme
+func webviewInvokeRewriteScheme(w unsafe.Pointer, url *C.char) *C.char {
+	u := C.GoString((*C.char)(url))
+	n := u
+
+	wv, cb := rewriteSchemeCallbacksForWebviewAndURL(w, u)
+
+	if cb != nil {
+		n = cb(wv, u)
+	}
+
+	return C.CString(n)
+	//return value must be freed by caller C code
+}
+
+//export webviewSchemeIsHandled
+func webviewSchemeIsHandled(w unsafe.Pointer, url *C.char) C.bool {
+	u := C.GoString((*C.char)(url))
+	_, cb := rewriteSchemeCallbacksForWebviewAndURL(w, u)
+
+	return cb != nil
 }
 
 var bindTmpl = template.Must(template.New("").Parse(`

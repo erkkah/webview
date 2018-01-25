@@ -92,6 +92,8 @@ typedef void (*webview_external_invoke_cb_t)(struct webview *w,
                                              const char *arg);
 typedef char* (*webview_rewrite_request_cb_t)(struct webview *w,
                                              const char *url);
+extern char* webviewInvokeRewriteScheme(void*, char*);
+extern bool webviewSchemeIsHandled(void*, char*);
 
 struct webview {
   const char *url;
@@ -1635,12 +1637,52 @@ static id webview_will_send_request(id self,
     return request;
   }
 
-  char* newURL = w->rewrite_request_cb(w, [[((NSURLRequest *)(request)).URL absoluteString] UTF8String]);
+  const char* url = [[((NSURLRequest *)(request)).URL absoluteString] UTF8String];
+
+  if (webviewSchemeIsHandled(w, (char*)url)) {
+    return request;
+  }
+
+  char* newURL = w->rewrite_request_cb(w, url);
   NSMutableURLRequest* newRequest = [(NSURLRequest *)(request) mutableCopy];
   newRequest.URL = [NSURL URLWithString: [NSString stringWithUTF8String:newURL]];
   free(newURL);
 
   return newRequest;
+}
+
+static void webview_decide_policy_for_navigation_action(id self,
+                                                        SEL cmd,
+                                                        id sender,
+                                                        id actionInformation,
+                                                        id request,
+                                                        id frame,
+                                                        id decisionListener) {
+  struct webview *w =
+      (struct webview *)objc_getAssociatedObject(self, "webview");
+
+  NSString *inUrlString = [((NSURLRequest *)(request)).URL absoluteString];
+  const char *inUrl = [inUrlString UTF8String];
+
+  if (webviewSchemeIsHandled(w, (char *)inUrl)) {
+    char *redirectUrl = webviewInvokeRewriteScheme(w, (char *)inUrl);
+    NSString *redirectUrlString = [NSString stringWithUTF8String:redirectUrl];
+    free(redirectUrl);
+
+    //If a callback is registered with webviewInvokeRewriteScheme for a certain
+    //scheme, it must change the URL or else there will be an infinite loop
+    assert([inUrlString compare:redirectUrlString] != NSOrderedSame);
+
+    [decisionListener ignore];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+      w->priv.webview.mainFrameURL = redirectUrlString;
+    });
+
+    return;
+  }
+
+  [decisionListener use];
 }
 
 static void webview_external_invoke(id self, SEL cmd, id arg) {
@@ -1677,6 +1719,9 @@ WEBVIEW_API int webview_init(struct webview *w) {
   class_addMethod(webViewDelegateClass,
                   sel_registerName("webView:resource:willSendRequest:redirectResponse:fromDataSource:"),
                    (IMP)webview_will_send_request, "@@:@@@@@");
+  class_addMethod(webViewDelegateClass,
+                  sel_registerName("webView:decidePolicyForNavigationAction:request:frame:decisionListener:"),
+                   (IMP)webview_decide_policy_for_navigation_action, "@:@@@@@");
   objc_registerClassPair(webViewDelegateClass);
 
   w->priv.windowDelegate = [[webViewDelegateClass alloc] init];
@@ -1713,6 +1758,7 @@ WEBVIEW_API int webview_init(struct webview *w) {
       setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
   w->priv.webview.frameLoadDelegate = w->priv.windowDelegate;
   w->priv.webview.resourceLoadDelegate = w->priv.windowDelegate;
+  w->priv.webview.policyDelegate = w->priv.windowDelegate;
   [[w->priv.window contentView] addSubview:w->priv.webview];
   [w->priv.window orderFrontRegardless];
 
