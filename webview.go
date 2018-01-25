@@ -25,9 +25,9 @@ package webview
 #include "webview.h"
 
 extern void _webviewExternalInvokeCallback(void *, void *);
-extern char* _webviewRewriteRequestCallbackFunc(void*, char*);
-extern char* webviewInvokeRewriteScheme(void*, char*);
-extern bool webviewSchemeIsHandled(void*, char*);
+extern char* _webviewRewriteRequestCallback(void*, char*);
+extern char* _webviewInvokeRewriteScheme(void*, char*);
+extern bool _webviewSchemeIsHandled(void*, char*);
 
 static inline void CgoWebViewFree(void *w) {
 	free((void *)((struct webview *)w)->title);
@@ -44,7 +44,7 @@ static inline void *CgoWebViewCreate(int width, int height, char *title, char *u
 	w->resizable = resizable;
 	w->debug = debug;
 	w->external_invoke_cb = (webview_external_invoke_cb_t) _webviewExternalInvokeCallback;
-	w->rewrite_request_cb = (webview_rewrite_request_cb_t) _webviewRewriteRequestCallbackFunc;
+	w->rewrite_request_cb = (webview_rewrite_request_cb_t) _webviewRewriteRequestCallback;
 	if (webview_init(w) != 0) {
 		CgoWebViewFree(w);
 		return NULL;
@@ -102,12 +102,12 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net/url"
 	"reflect"
 	"runtime"
 	"sync"
 	"unicode"
 	"unsafe"
-	"net/url"
 )
 
 func init() {
@@ -325,7 +325,7 @@ func New(settings Settings) WebView {
 	if settings.RewriteSchemeCallbacks != nil {
 		sCbm[w] = settings.RewriteSchemeCallbacks
 	} else {
-		sCbm[w] = map[string]RewriteSchemeCallbackFunc {}
+		sCbm[w] = map[string]RewriteSchemeCallbackFunc{}
 	}
 	m.Unlock()
 	return w
@@ -422,8 +422,8 @@ func _webviewExternalInvokeCallback(w unsafe.Pointer, data unsafe.Pointer) {
 	cb(wv, C.GoString((*C.char)(data)))
 }
 
-//export _webviewRewriteRequestCallbackFunc
-func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url *C.char) *C.char {
+//export _webviewRewriteRequestCallback
+func _webviewRewriteRequestCallback(w unsafe.Pointer, url *C.char) *C.char {
 	u := C.GoString((*C.char)(url))
 
 	m.Lock()
@@ -447,9 +447,9 @@ func _webviewRewriteRequestCallbackFunc(w unsafe.Pointer, url *C.char) *C.char {
 func rewriteSchemeCallbacksForWebviewAndURL(w unsafe.Pointer, u string) (WebView, RewriteSchemeCallbackFunc) {
 	m.Lock()
 	var (
-		cb RewriteSchemeCallbackFunc
+		cb  RewriteSchemeCallbackFunc
 		cbm map[string]RewriteSchemeCallbackFunc
-		wv WebView
+		wv  WebView
 	)
 	for wv, cbm = range sCbm {
 		if wv.(*webview).w == w {
@@ -463,8 +463,8 @@ func rewriteSchemeCallbacksForWebviewAndURL(w unsafe.Pointer, u string) (WebView
 	return wv, cb
 }
 
-//export webviewInvokeRewriteScheme
-func webviewInvokeRewriteScheme(w unsafe.Pointer, url *C.char) *C.char {
+//export _webviewInvokeRewriteScheme
+func _webviewInvokeRewriteScheme(w unsafe.Pointer, url *C.char) *C.char {
 	u := C.GoString((*C.char)(url))
 	n := u
 
@@ -478,8 +478,8 @@ func webviewInvokeRewriteScheme(w unsafe.Pointer, url *C.char) *C.char {
 	//return value must be freed by caller C code
 }
 
-//export webviewSchemeIsHandled
-func webviewSchemeIsHandled(w unsafe.Pointer, url *C.char) C.bool {
+//export _webviewSchemeIsHandled
+func _webviewSchemeIsHandled(w unsafe.Pointer, url *C.char) C.bool {
 	u := C.GoString((*C.char)(url))
 	_, cb := rewriteSchemeCallbacksForWebviewAndURL(w, u)
 

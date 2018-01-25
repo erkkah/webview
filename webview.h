@@ -36,6 +36,7 @@ extern "C" {
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #if defined(WEBVIEW_GTK)
 #include <JavaScriptCore/JavaScript.h>
@@ -92,8 +93,8 @@ typedef void (*webview_external_invoke_cb_t)(struct webview *w,
                                              const char *arg);
 typedef char* (*webview_rewrite_request_cb_t)(struct webview *w,
                                              const char *url);
-extern char* webviewInvokeRewriteScheme(void*, char*);
-extern bool webviewSchemeIsHandled(void*, char*);
+extern char* _webviewInvokeRewriteScheme(void*, char*);
+extern bool _webviewSchemeIsHandled(void*, char*);
 
 struct webview {
   const char *url;
@@ -849,32 +850,35 @@ static HRESULT STDMETHODCALLTYPE UI_TranslateUrl(
   struct webview *w = (struct webview *)GetWindowLongPtr(
       ex->inplace.frame.window, GWLP_USERDATA);
 
-  if (w->rewrite_request_cb == NULL) {
-    *ppchURLOut = 0;
-    return S_FALSE;
-  }
-  else {
-    char* utf8URL = webview_from_utf16(pchURLIn);
-    char* rewritten = w->rewrite_request_cb(w, utf8URL);
+  char* utf8URL = webview_from_utf16(pchURLIn);
+  char* rewritten = NULL;
+
+  if(_webviewSchemeIsHandled(w, utf8URL)) {
+    rewritten = _webviewInvokeRewriteScheme(w, utf8URL);
     GlobalFree(utf8URL);
     utf8URL = NULL;
 
-    if (rewritten) {
-      DWORD size = MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, 0, 0);
-      WCHAR *rewrittenWide = (WCHAR *)CoTaskMemAlloc(sizeof(WCHAR) * size);
-      if (rewrittenWide == NULL) {
-        free(rewritten);
-        return E_OUTOFMEMORY;
-      }
-      MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, rewrittenWide, size);
+  } else if (w->rewrite_request_cb != NULL) {
+    rewritten = w->rewrite_request_cb(w, utf8URL);
+    GlobalFree(utf8URL);
+    utf8URL = NULL;
+  }
+
+  if (rewritten) {
+    DWORD size = MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, 0, 0);
+    WCHAR *rewrittenWide = (WCHAR *)CoTaskMemAlloc(sizeof(WCHAR) * size);
+    if (rewrittenWide == NULL) {
       free(rewritten);
-      *ppchURLOut = rewrittenWide;
-      return S_OK;
+      return E_OUTOFMEMORY;
     }
-    else {
-      *ppchURLOut = 0;
-      return S_FALSE;
-    }
+    MultiByteToWideChar(CP_UTF8, 0, rewritten, -1, rewrittenWide, size);
+    free(rewritten);
+    *ppchURLOut = rewrittenWide;
+    return S_OK;
+  }
+  else {
+    *ppchURLOut = 0;
+    return S_FALSE;
   }
 }
 static HRESULT STDMETHODCALLTYPE
@@ -1639,7 +1643,7 @@ static id webview_will_send_request(id self,
 
   const char* url = [[((NSURLRequest *)(request)).URL absoluteString] UTF8String];
 
-  if (webviewSchemeIsHandled(w, (char*)url)) {
+  if (_webviewSchemeIsHandled(w, (char*)url)) {
     return request;
   }
 
@@ -1664,12 +1668,12 @@ static void webview_decide_policy_for_navigation_action(id self,
   NSString *inUrlString = [((NSURLRequest *)(request)).URL absoluteString];
   const char *inUrl = [inUrlString UTF8String];
 
-  if (webviewSchemeIsHandled(w, (char *)inUrl)) {
-    char *redirectUrl = webviewInvokeRewriteScheme(w, (char *)inUrl);
+  if (_webviewSchemeIsHandled(w, (char *)inUrl)) {
+    char *redirectUrl = _webviewInvokeRewriteScheme(w, (char *)inUrl);
     NSString *redirectUrlString = [NSString stringWithUTF8String:redirectUrl];
     free(redirectUrl);
 
-    //If a callback is registered with webviewInvokeRewriteScheme for a certain
+    //If a callback is registered with _webviewInvokeRewriteScheme for a certain
     //scheme, it must change the URL or else there will be an infinite loop
     assert([inUrlString compare:redirectUrlString] != NSOrderedSame);
 
