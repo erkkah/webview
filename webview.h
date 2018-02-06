@@ -1630,7 +1630,7 @@ static void webview_did_clear_window_object(id self, SEL cmd, id webview,
 static id webview_will_send_request(id self,
                                     SEL cmd,
                                     id sender,
-                                    id identifier,
+                                    SEL identifier,
                                     id request,
                                     id redirectResponse,
                                     id dataSource) {
@@ -1718,10 +1718,10 @@ WEBVIEW_API int webview_init(struct webview *w) {
                   (IMP)webview_external_invoke, "v@:@");
   class_addMethod(webViewDelegateClass,
                   sel_registerName("webView:resource:willSendRequest:redirectResponse:fromDataSource:"),
-                   (IMP)webview_will_send_request, "@@:@@@@@");
+                   (IMP)webview_will_send_request, "@@:@:@@@");
   class_addMethod(webViewDelegateClass,
                   sel_registerName("webView:decidePolicyForNavigationAction:request:frame:decisionListener:"),
-                   (IMP)webview_decide_policy_for_navigation_action, "@:@@@@@");
+                   (IMP)webview_decide_policy_for_navigation_action, "v@:@@@@@");
   objc_registerClassPair(webViewDelegateClass);
 
   w->priv.windowDelegate = [[webViewDelegateClass alloc] init];
